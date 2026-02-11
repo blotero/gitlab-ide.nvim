@@ -2,6 +2,11 @@
 
 A Neovim plugin for viewing GitLab CI/CD pipeline status in a multi-column floating window interface.
 
+## Look and feel
+
+<img width="2448" height="1290" alt="image" src="https://github.com/user-attachments/assets/a86bd6dd-3c74-4ac4-b192-f93f1a433bd3" />
+
+
 ## Requirements
 
 - Neovim 0.10+ (for `vim.system()` support)
