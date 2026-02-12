@@ -57,6 +57,13 @@ function M.open()
     return
   end
 
+  -- Build API context for UI actions
+  local api_context = {
+    gitlab_url = gitlab_url,
+    token = token,
+    project_path = project_path,
+  }
+
   -- Show loading message
   vim.notify("Fetching pipeline for " .. project_path .. " @ " .. branch .. "...", vim.log.levels.INFO)
 
@@ -79,7 +86,7 @@ function M.open()
     end
 
     -- Open UI with pipeline data
-    ui.open(pipeline, refresh)
+    ui.open(pipeline, refresh, api_context)
   end)
 end
 

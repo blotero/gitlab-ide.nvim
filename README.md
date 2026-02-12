@@ -11,7 +11,7 @@ A Neovim plugin for viewing GitLab CI/CD pipeline status in a multi-column float
 
 - Neovim 0.10+ (for `vim.system()` support)
 - `curl` command available in PATH
-- GitLab personal access token with `read_api` scope
+- GitLab personal access token with `api` scope (for job actions) or `read_api` (read-only)
 
 ## Installation
 
@@ -68,18 +68,33 @@ Open a GitLab repository in Neovim and run:
 :GitlabPipeline
 ```
 
-This opens a multi-column floating window showing the pipeline for your current branch.
+This opens a multi-column floating window showing the pipeline for your current branch. Navigate to any job and press `Enter` to view its log, or use action keys to cancel/retry jobs directly from the UI.
 
-### Keybindings
+### Pipeline View Keybindings
 
 | Key | Action |
 |-----|--------|
 | `h` | Move to previous stage column |
 | `l` | Move to next stage column |
 | `j` / `k` | Navigate jobs within stage (native Vim motion) |
-| `q` | Close pipeline view |
-| `Esc` | Close pipeline view |
+| `Enter` | Open job log (drill-down) |
+| `c` | Cancel job under cursor (with confirmation) |
+| `x` | Retry job under cursor |
+| `C` | Cancel entire pipeline (with confirmation) |
+| `X` | Retry failed jobs in pipeline |
 | `r` | Refresh pipeline data |
+| `q` / `Esc` | Close pipeline view |
+
+### Log View Keybindings
+
+| Key | Action |
+|-----|--------|
+| `q` / `Backspace` | Back to pipeline view |
+| `Esc` | Close everything |
+| `r` | Refresh log |
+| `j` / `k` / `Ctrl-d` / `Ctrl-u` / `G` / `gg` | Scroll (native Vim motions) |
+
+Logs for running/pending jobs auto-refresh every 5 seconds.
 
 ### Status Icons
 
