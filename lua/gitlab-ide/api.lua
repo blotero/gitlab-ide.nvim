@@ -167,15 +167,26 @@ function M.rest_request(gitlab_url, token, method, endpoint, callback, opts)
 	local stdout_data = {}
 	local stderr_data = {}
 
-	vim.system({
+	local curl_args = {
 		"curl",
 		"-s",
 		"-X",
 		method,
 		"-H",
 		"PRIVATE-TOKEN: " .. token,
-		url,
-	}, {
+	}
+
+	if opts.body then
+		local json_body = vim.json.encode(opts.body)
+		table.insert(curl_args, "-H")
+		table.insert(curl_args, "Content-Type: application/json")
+		table.insert(curl_args, "-d")
+		table.insert(curl_args, json_body)
+	end
+
+	table.insert(curl_args, url)
+
+	vim.system(curl_args, {
 		text = true,
 		stdout = function(_, data)
 			if data then
@@ -212,8 +223,23 @@ function M.rest_request(gitlab_url, token, method, endpoint, callback, opts)
 				return
 			end
 
-			if response.message then
+			if response.message and not response.id and not response.iid then
 				callback("API error: " .. vim.inspect(response.message), nil)
+				return
+			end
+
+			if response.error then
+				if response.error == "insufficient_scope" then
+					callback(
+						"Insufficient token scope. This action requires the 'api' scope — "
+							.. "regenerate your token with write access. "
+							.. "(current scopes: " .. (response.scope or "unknown") .. ")",
+						nil
+					)
+				else
+					local desc = response.error_description or response.error
+					callback("Auth error: " .. desc, nil)
+				end
 				return
 			end
 
@@ -285,6 +311,230 @@ function M.fetch_job_log(gitlab_url, token, project_path, job_gid, callback)
 	local encoded_path = M.url_encode_path(project_path)
 	local endpoint = string.format("/api/v4/projects/%s/jobs/%s/trace", encoded_path, job_id)
 	M.rest_request(gitlab_url, token, "GET", endpoint, callback, { raw = true })
+end
+
+-- GraphQL query for fetching open merge requests
+local MR_LIST_QUERY = [[
+query($fullPath: ID!) {
+  project(fullPath: $fullPath) {
+    mergeRequests(state: opened, sort: UPDATED_DESC, first: 50) {
+      nodes {
+        iid
+        title
+        state
+        draft
+        webUrl
+        createdAt
+        updatedAt
+        author {
+          name
+          username
+        }
+        sourceBranch
+        targetBranch
+      }
+    }
+  }
+}
+]]
+
+-- GraphQL query for fetching a single merge request with full detail
+local MR_DETAIL_QUERY = [[
+query($fullPath: ID!, $iid: String!) {
+  project(fullPath: $fullPath) {
+    mergeRequest(iid: $iid) {
+      iid
+      title
+      state
+      draft
+      webUrl
+      description
+      createdAt
+      updatedAt
+      author {
+        name
+        username
+      }
+      sourceBranch
+      targetBranch
+      labels {
+        nodes {
+          title
+          color
+        }
+      }
+      assignees {
+        nodes {
+          name
+          username
+        }
+      }
+      reviewers {
+        nodes {
+          name
+          username
+        }
+      }
+      approved
+      approvalsRequired
+      approvalsLeft
+      diffStats {
+        path
+        additions
+        deletions
+      }
+      headPipeline {
+        status
+      }
+    }
+  }
+}
+]]
+
+-- GraphQL query for fetching the default branch
+local DEFAULT_BRANCH_QUERY = [[
+query($fullPath: ID!) {
+  project(fullPath: $fullPath) {
+    repository {
+      rootRef
+    }
+  }
+}
+]]
+
+--- Fetch open merge requests for a project
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param callback function Callback function(err, merge_requests)
+function M.fetch_merge_requests(gitlab_url, token, project_path, callback)
+	M.request(gitlab_url, token, MR_LIST_QUERY, { fullPath = project_path }, function(err, data)
+		if err then
+			callback(err, nil)
+			return
+		end
+		if not data or not data.project then
+			callback("Project not found: " .. project_path, nil)
+			return
+		end
+		local mrs = data.project.mergeRequests and data.project.mergeRequests.nodes or {}
+		callback(nil, mrs)
+	end)
+end
+
+--- Fetch full detail for a single merge request
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param iid string|number The merge request IID
+---@param callback function Callback function(err, merge_request)
+function M.fetch_merge_request_detail(gitlab_url, token, project_path, iid, callback)
+	M.request(gitlab_url, token, MR_DETAIL_QUERY, { fullPath = project_path, iid = tostring(iid) }, function(err, data)
+		if err then
+			callback(err, nil)
+			return
+		end
+		if not data or not data.project or not data.project.mergeRequest then
+			callback("Merge request not found: !" .. tostring(iid), nil)
+			return
+		end
+		callback(nil, data.project.mergeRequest)
+	end)
+end
+
+--- Fetch the default branch for a project
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param callback function Callback function(err, default_branch)
+function M.fetch_project_default_branch(gitlab_url, token, project_path, callback)
+	M.request(gitlab_url, token, DEFAULT_BRANCH_QUERY, { fullPath = project_path }, function(err, data)
+		if err then
+			callback(err, nil)
+			return
+		end
+		if not data or not data.project or not data.project.repository then
+			callback("Could not fetch default branch for: " .. project_path, nil)
+			return
+		end
+		callback(nil, data.project.repository.rootRef)
+	end)
+end
+
+--- Fetch available MR templates for a project
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param callback function Callback function(err, templates)
+function M.fetch_mr_templates(gitlab_url, token, project_path, callback)
+	local encoded_path = M.url_encode_path(project_path)
+	local endpoint = string.format("/api/v4/projects/%s/templates/merge_requests", encoded_path)
+	M.rest_request(gitlab_url, token, "GET", endpoint, function(err, data)
+		if err then
+			-- 404 means no templates, return empty list
+			callback(nil, {})
+			return
+		end
+		if type(data) ~= "table" then
+			callback(nil, {})
+			return
+		end
+		callback(nil, data)
+	end)
+end
+
+--- Fetch the content of a specific MR template
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param name string The template name
+---@param callback function Callback function(err, content)
+function M.fetch_mr_template_content(gitlab_url, token, project_path, name, callback)
+	local encoded_path = M.url_encode_path(project_path)
+	local endpoint = string.format("/api/v4/projects/%s/templates/merge_requests/%s", encoded_path, name)
+	M.rest_request(gitlab_url, token, "GET", endpoint, function(err, data)
+		if err then
+			callback(err, nil)
+			return
+		end
+		callback(nil, data.content or "")
+	end)
+end
+
+--- Create a merge request
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param params table MR parameters: { source_branch, target_branch, title, description }
+---@param callback function Callback function(err, merge_request)
+function M.create_merge_request(gitlab_url, token, project_path, params, callback)
+	local encoded_path = M.url_encode_path(project_path)
+	local endpoint = string.format("/api/v4/projects/%s/merge_requests", encoded_path)
+	M.rest_request(gitlab_url, token, "POST", endpoint, callback, { body = params })
+end
+
+--- Approve a merge request
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param iid string|number The merge request IID
+---@param callback function Callback function(err, data)
+function M.approve_merge_request(gitlab_url, token, project_path, iid, callback)
+	local encoded_path = M.url_encode_path(project_path)
+	local endpoint = string.format("/api/v4/projects/%s/merge_requests/%s/approve", encoded_path, tostring(iid))
+	M.rest_request(gitlab_url, token, "POST", endpoint, callback)
+end
+
+--- Fetch notes/comments for a merge request
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param iid string|number The merge request IID
+---@param callback function Callback function(err, notes)
+function M.fetch_mr_notes(gitlab_url, token, project_path, iid, callback)
+	local encoded_path = M.url_encode_path(project_path)
+	local endpoint = string.format("/api/v4/projects/%s/merge_requests/%s/notes?sort=asc", encoded_path, tostring(iid))
+	M.rest_request(gitlab_url, token, "GET", endpoint, callback)
 end
 
 return M

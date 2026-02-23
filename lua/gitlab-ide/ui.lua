@@ -313,6 +313,15 @@ local function setup_keymaps(buf)
 		end
 		open_log_view(job)
 	end, opts)
+
+	-- Create merge request
+	vim.keymap.set("n", "m", function()
+		if not state.api_context then
+			vim.notify("API context not available", vim.log.levels.ERROR)
+			return
+		end
+		require("gitlab-ide.mr").open_create_view(state.api_context)
+	end, opts)
 end
 
 --- Render a stage buffer with jobs
@@ -355,7 +364,7 @@ local function render_stage(buf, stage)
 
 	-- Keybinding hints
 	table.insert(lines, "")
-	local hint = " ⏎:log c:cancel x:retry C/X:pipeline"
+	local hint = " ⏎:log c:cancel x:retry C/X:pipeline m:MR"
 	table.insert(lines, hint)
 	table.insert(highlights_to_apply, {
 		line = #lines - 1,

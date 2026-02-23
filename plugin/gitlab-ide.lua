@@ -19,3 +19,10 @@ vim.api.nvim_create_user_command("GitlabIdePipeline", function()
 end, {
 	desc = "Open GitLab IDE pipeline view for current branch",
 })
+
+-- Register the :GitlabIdeMergeRequests command
+vim.api.nvim_create_user_command("GitlabIdeMergeRequests", function()
+	require("gitlab-ide").open_merge_requests()
+end, {
+	desc = "Open GitLab IDE merge requests list",
+})
