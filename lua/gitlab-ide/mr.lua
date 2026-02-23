@@ -634,6 +634,9 @@ function M.open_create_view(api_context)
 			return
 		end
 
+		-- Resolve first-commit info for placeholder substitution (synchronous)
+		local first_commit = git.get_first_commit_info(default_branch)
+
 		-- Fetch MR templates
 		api.fetch_mr_templates(ctx.gitlab_url, ctx.token, ctx.project_path, function(_, templates)
 			templates = templates or {}
@@ -678,8 +681,15 @@ function M.open_create_view(api_context)
 				state.create_window = win
 				state.create_buffer = buf
 
-				-- Pre-fill buffer: line 1 = humanized title, rest = template
-				local initial_lines = { humanize_branch(branch) }
+				-- Resolve %{first_multiline_commit} placeholder
+				if first_commit and template_content and template_content ~= "" then
+					template_content = template_content:gsub("%%{first_multiline_commit}", function()
+						return first_commit.full
+					end)
+				end
+
+				-- Pre-fill buffer: line 1 = commit subject (or humanized branch), rest = template
+				local initial_lines = { (first_commit and first_commit.title) or humanize_branch(branch) }
 				if template_content and template_content ~= "" then
 					table.insert(initial_lines, "")
 					for _, line in ipairs(vim.split(template_content, "\n", { trimempty = false })) do
@@ -732,21 +742,21 @@ function M.open_create_view(api_context)
 				end, km_opts)
 			end
 
-			-- Check if "Default" template exists
-			local has_default = false
+			-- Check if "Default" template exists (case-insensitive)
+			local default_template_name = nil
 			for _, tmpl in ipairs(templates) do
-				if tmpl.name == "Default" then
-					has_default = true
+				if tmpl.name:lower() == "default" then
+					default_template_name = tmpl.name
 					break
 				end
 			end
 
-			if has_default then
+			if default_template_name then
 				api.fetch_mr_template_content(
 					ctx.gitlab_url,
 					ctx.token,
 					ctx.project_path,
-					"Default",
+					default_template_name,
 					function(_, content)
 						open_form(content or "")
 					end

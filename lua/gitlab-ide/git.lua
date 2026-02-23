@@ -30,6 +30,33 @@ function M.get_remote_url(remote)
 	return nil, "Could not get remote URL"
 end
 
+--- Get info about the first (oldest) commit on HEAD not reachable from default_branch
+---@param default_branch string The project default branch (e.g. "main")
+---@return table|nil info Table with `title` (string) and `full` (string), or nil if no commits
+function M.get_first_commit_info(default_branch)
+	local shas = vim.fn.systemlist({
+		"git",
+		"log",
+		"origin/" .. default_branch .. "..HEAD",
+		"--reverse",
+		"--format=%H",
+	})
+	if vim.v.shell_error ~= 0 or #shas == 0 then
+		return nil
+	end
+	local msg_lines = vim.fn.systemlist({ "git", "show", "-s", "--format=%B", shas[1] })
+	if vim.v.shell_error ~= 0 or #msg_lines == 0 then
+		return nil
+	end
+	while #msg_lines > 0 and msg_lines[#msg_lines] == "" do
+		table.remove(msg_lines)
+	end
+	return {
+		title = msg_lines[1],
+		full = table.concat(msg_lines, "\n"),
+	}
+end
+
 --- Parse a GitLab remote URL to extract the project path
 --- Handles both SSH and HTTPS URLs:
 ---   git@gitlab.com:group/project.git -> group/project
