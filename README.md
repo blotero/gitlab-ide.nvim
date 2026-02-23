@@ -85,6 +85,7 @@ This opens a multi-column floating window showing the pipeline for your current 
 | `l` | Move to next stage column |
 | `j` / `k` | Navigate jobs within stage (native Vim motion) |
 | `Enter` | Open job log (drill-down) |
+| `o` | Open job page in browser |
 | `c` | Cancel job under cursor (with confirmation) |
 | `x` | Retry job under cursor |
 | `C` | Cancel entire pipeline (with confirmation) |
@@ -98,6 +99,7 @@ This opens a multi-column floating window showing the pipeline for your current 
 |-----|--------|
 | `q` / `Backspace` | Back to pipeline view |
 | `Esc` | Close everything |
+| `o` | Open job page in browser |
 | `r` | Refresh log |
 | `j` / `k` / `Ctrl-d` / `Ctrl-u` / `G` / `gg` | Scroll (native Vim motions) |
 

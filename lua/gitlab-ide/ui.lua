@@ -314,6 +314,20 @@ local function setup_keymaps(buf)
 		open_log_view(job)
 	end, opts)
 
+	-- Open job URL in browser
+	vim.keymap.set("n", "o", function()
+		local job = get_job_under_cursor()
+		if not job then
+			vim.notify("No job under cursor", vim.log.levels.WARN)
+			return
+		end
+		if not state.api_context or not job.webPath then
+			vim.notify("Job URL not available", vim.log.levels.ERROR)
+			return
+		end
+		vim.ui.open(state.api_context.gitlab_url .. job.webPath)
+	end, opts)
+
 	-- Create merge request
 	vim.keymap.set("n", "m", function()
 		if not state.api_context then
@@ -364,7 +378,7 @@ local function render_stage(buf, stage)
 
 	-- Keybinding hints
 	table.insert(lines, "")
-	local hint = " ⏎:log c:cancel x:retry C/X:pipeline m:MR"
+	local hint = " ⏎:log o:open c:cancel x:retry C/X:pipeline m:MR"
 	table.insert(lines, hint)
 	table.insert(highlights_to_apply, {
 		line = #lines - 1,
@@ -611,6 +625,17 @@ setup_log_keymaps = function(buf)
 				end
 			end
 		end)
+	end, opts)
+
+	-- Open job URL in browser
+	vim.keymap.set("n", "o", function()
+		if not state.log_state or not state.api_context then
+			return
+		end
+		local job = state.log_state.job
+		if job and job.webPath then
+			vim.ui.open(state.api_context.gitlab_url .. job.webPath)
+		end
 	end, opts)
 end
 
