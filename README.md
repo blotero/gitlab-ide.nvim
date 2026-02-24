@@ -10,8 +10,15 @@ See active jobs in your pipeline:
 
 See logs from your jobs in real time:
 
-<img width="1301" height="799" alt="image" src="https://github.com/user-attachments/assets/3f0969a9-1718-4eaf-8f9b-86297bc875d0" />
+<img width="1293" height="792" alt="image" src="https://github.com/user-attachments/assets/de103adf-4ae4-4236-910d-8308e7088e7c" />
 
+Navigate through existing Merge Requests:
+
+<img width="1086" height="584" alt="image" src="https://github.com/user-attachments/assets/29857e3a-9843-4cc6-b53a-e5bb6d0926f3" />
+
+Create MRs from your pipeline buffers:
+
+<img width="1247" height="627" alt="image" src="https://github.com/user-attachments/assets/1978a92e-ac41-4a00-a50a-02e56232883d" />
 
 
 ## Requirements
