@@ -32,6 +32,32 @@ local highlights = {
 	SCHEDULED = "DiagnosticHint",
 }
 
+-- Namespace for log ANSI highlights
+local log_ns = vim.api.nvim_create_namespace("gitlab_ide_log")
+
+-- ANSI foreground color codes → hex (Tomorrow Night palette, dark-theme friendly)
+local ansi_fg_colors = {
+	[30] = "#808080",
+	[31] = "#cc6666",
+	[32] = "#b5bd68",
+	[33] = "#f0c674",
+	[34] = "#81a2be",
+	[35] = "#b294bb",
+	[36] = "#8abeb7",
+	[37] = "#c5c8c6",
+	[90] = "#666666",
+	[91] = "#ff7070",
+	[92] = "#c5d16c",
+	[93] = "#ffcc80",
+	[94] = "#8bb8d4",
+	[95] = "#c3a8cf",
+	[96] = "#a0cfc9",
+	[97] = "#e8e8e8",
+}
+
+-- Cache for lazily created ANSI highlight groups
+local ansi_hl_cache = {}
+
 -- UI state
 local state = {
 	windows = {}, -- List of window IDs
@@ -58,11 +84,157 @@ local function get_highlight(status)
 	return highlights[status] or "Normal"
 end
 
---- Strip ANSI escape codes from text
----@param text string Text with potential ANSI codes
----@return string cleaned Text without ANSI codes
-local function strip_ansi(text)
-	return text:gsub("\27%[[%d;]*[A-Za-z]", "")
+--- Lazily create and cache a named highlight group for an ANSI SGR state
+---@param fg_code number|nil ANSI foreground color code (30-37, 90-97), or nil
+---@param bold boolean Whether bold is active
+---@return string hl_group The highlight group name
+local function get_ansi_hl(fg_code, bold)
+	local key = tostring(fg_code or "nil") .. (bold and "_bold" or "")
+	if ansi_hl_cache[key] then
+		return ansi_hl_cache[key]
+	end
+	local name = "GitlabAnsi" .. (fg_code or "def") .. (bold and "Bold" or "")
+	local attrs = {}
+	if fg_code and ansi_fg_colors[fg_code] then
+		attrs.fg = ansi_fg_colors[fg_code]
+	end
+	if bold then
+		attrs.bold = true
+	end
+	vim.api.nvim_set_hl(0, name, attrs)
+	ansi_hl_cache[key] = name
+	return name
+end
+
+--- Parse SGR ANSI escape sequences from a single line
+---@param raw_line string Raw line potentially containing ANSI codes
+---@return string clean_text Line with all escape sequences removed
+---@return table spans List of {col_start, col_end, hl} highlight spans
+local function parse_sgr(raw_line)
+	local clean_parts = {}
+	local spans = {}
+	local col = 0
+	local fg_code = nil
+	local bold = false
+	local span_start = 0
+	local len = #raw_line
+	local i = 1
+	while i <= len do
+		local byte = raw_line:sub(i, i)
+		if byte == "\27" and raw_line:sub(i + 1, i + 1) == "[" then
+			local j = i + 2
+			while j <= len and not raw_line:sub(j, j):match("[A-Za-z]") do
+				j = j + 1
+			end
+			if j > len then
+				break
+			end
+			local final = raw_line:sub(j, j)
+			local params_str = raw_line:sub(i + 2, j - 1)
+			if final == "m" then
+				-- Flush the current span before changing state
+				if (fg_code ~= nil or bold) and col > span_start then
+					table.insert(spans, {
+						col_start = span_start,
+						col_end = col,
+						hl = get_ansi_hl(fg_code, bold),
+					})
+				end
+				-- Parse new state
+				if params_str == "" or params_str == "0" then
+					fg_code = nil
+					bold = false
+				else
+					for code_str in params_str:gmatch("[^;]+") do
+						local code = tonumber(code_str)
+						if code == 0 then
+							fg_code = nil
+							bold = false
+						elseif code == 1 then
+							bold = true
+						elseif (code >= 30 and code <= 37) or (code >= 90 and code <= 97) then
+							fg_code = code
+						end
+					end
+				end
+				span_start = col
+			end
+			i = j + 1
+		else
+			table.insert(clean_parts, byte)
+			col = col + 1
+			i = i + 1
+		end
+	end
+	-- Flush the final span
+	if (fg_code ~= nil or bold) and col > span_start then
+		table.insert(spans, {
+			col_start = span_start,
+			col_end = col,
+			hl = get_ansi_hl(fg_code, bold),
+		})
+	end
+
+	return table.concat(clean_parts), spans
+end
+
+--- Render a raw log text (with ANSI codes) into a buffer with proper highlights
+---@param buf number Buffer ID
+---@param ns_id number Namespace ID for highlights
+---@param text string Raw log text with ANSI escape sequences
+local function render_log_to_buf(buf, ns_id, text)
+	-- Normalize line endings
+	text = text:gsub("\r\n", "\n"):gsub("\r", "\n")
+	local raw_lines = vim.split(text, "\n", { plain = true, trimempty = false })
+
+	local clean_lines = {}
+	local all_spans = {} -- list of {line_idx (0-based), col_start, col_end, hl}
+
+	for idx, raw_line in ipairs(raw_lines) do
+		local line_idx = idx - 1
+		-- Check for GitLab section markers (before stripping ANSI)
+		local section_name = raw_line:match("^section_start:%d+:([^\r\n\27]+)")
+		if not section_name then
+			-- Also check without ANSI prefix
+			local stripped_check = raw_line:gsub("\27%[[%d;]*[A-Za-z]", "")
+			section_name = stripped_check:match("^section_start:%d+:([^\r\n]+)")
+		end
+		local section_end = raw_line:match("^section_end:") or raw_line:gsub("\27%[[%d;]*[A-Za-z]", ""):match("^section_end:")
+
+		if section_name then
+			-- Replace underscores with spaces and format as header
+			local display = "▶  " .. section_name:gsub("_", " "):gsub("%[0K", ""):gsub("%[%d*[A-Za-z]", "")
+			table.insert(clean_lines, display)
+			table.insert(all_spans, {
+				line_idx = line_idx,
+				col_start = 0,
+				col_end = #display,
+				hl = "DiagnosticInfo",
+			})
+		elseif section_end then
+			table.insert(clean_lines, "")
+		else
+			local clean_text, spans = parse_sgr(raw_line)
+			table.insert(clean_lines, clean_text)
+			for _, span in ipairs(spans) do
+				table.insert(all_spans, {
+					line_idx = line_idx,
+					col_start = span.col_start,
+					col_end = span.col_end,
+					hl = span.hl,
+				})
+			end
+		end
+	end
+
+	vim.api.nvim_buf_set_option(buf, "modifiable", true)
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, clean_lines)
+	vim.api.nvim_buf_set_option(buf, "modifiable", false)
+
+	vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+	for _, span in ipairs(all_spans) do
+		vim.api.nvim_buf_add_highlight(buf, ns_id, span.hl, span.line_idx, span.col_start, span.col_end)
+	end
 end
 
 --- Get the job under the cursor in the current stage window
@@ -517,17 +689,13 @@ open_log_view = function(job)
 				return
 			end
 
-			local cleaned = strip_ansi(log_text)
-			local lines = vim.split(cleaned, "\n", { trimempty = false })
-
 			if vim.api.nvim_buf_is_valid(buf) then
-				vim.api.nvim_buf_set_option(buf, "modifiable", true)
-				vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-				vim.api.nvim_buf_set_option(buf, "modifiable", false)
+				render_log_to_buf(buf, log_ns, log_text)
 
 				-- Scroll to bottom
 				if vim.api.nvim_win_is_valid(win) then
-					vim.api.nvim_win_set_cursor(win, { math.max(1, #lines), 0 })
+					local line_count = vim.api.nvim_buf_line_count(buf)
+					vim.api.nvim_win_set_cursor(win, { math.max(1, line_count), 0 })
 				end
 			end
 		end)
@@ -614,14 +782,11 @@ setup_log_keymaps = function(buf)
 				vim.notify("Log refresh failed: " .. err, vim.log.levels.ERROR)
 				return
 			end
-			local cleaned = strip_ansi(log_text)
-			local lines = vim.split(cleaned, "\n", { trimempty = false })
 			if vim.api.nvim_buf_is_valid(log_buf) then
-				vim.api.nvim_buf_set_option(log_buf, "modifiable", true)
-				vim.api.nvim_buf_set_lines(log_buf, 0, -1, false, lines)
-				vim.api.nvim_buf_set_option(log_buf, "modifiable", false)
+				render_log_to_buf(log_buf, log_ns, log_text)
 				if vim.api.nvim_win_is_valid(log_win) then
-					vim.api.nvim_win_set_cursor(log_win, { math.max(1, #lines), 0 })
+					local line_count = vim.api.nvim_buf_line_count(log_buf)
+					vim.api.nvim_win_set_cursor(log_win, { math.max(1, line_count), 0 })
 				end
 			end
 		end)
