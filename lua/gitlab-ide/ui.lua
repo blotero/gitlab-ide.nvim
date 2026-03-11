@@ -66,6 +66,7 @@ local state = {
 	pipeline = nil, -- Current pipeline data
 	refresh_fn = nil, -- Function to refresh data
 	api_context = nil, -- { gitlab_url, token, project_path }
+	on_switch_branch = nil, -- callback to open branch picker
 	view = "pipeline", -- "pipeline" or "log"
 	log_state = nil, -- { window, buffer, job, timer }
 }
@@ -500,6 +501,13 @@ local function setup_keymaps(buf)
 		vim.ui.open(state.api_context.gitlab_url .. job.webPath)
 	end, opts)
 
+	-- Switch branch
+	vim.keymap.set("n", "b", function()
+		if state.on_switch_branch then
+			state.on_switch_branch()
+		end
+	end, opts)
+
 	-- Create merge request
 	vim.keymap.set("n", "m", function()
 		if not state.api_context then
@@ -550,7 +558,7 @@ local function render_stage(buf, stage)
 
 	-- Keybinding hints
 	table.insert(lines, "")
-	local hint = " ⏎:log o:open c:cancel x:retry C/X:pipeline m:MR"
+	local hint = " ⏎:log o:open b:branch c:cancel x:retry C/X:pipeline m:MR"
 	table.insert(lines, hint)
 	table.insert(highlights_to_apply, {
 		line = #lines - 1,
@@ -808,13 +816,15 @@ end
 ---@param pipeline table Pipeline data from API
 ---@param refresh_fn function|nil Optional function to refresh data
 ---@param api_context table|nil API context { gitlab_url, token, project_path }
-function M.open(pipeline, refresh_fn, api_context)
+---@param on_switch_branch function|nil Callback to open branch picker
+function M.open(pipeline, refresh_fn, api_context, on_switch_branch)
 	-- Close any existing UI
 	M.close()
 
 	state.pipeline = pipeline
 	state.refresh_fn = refresh_fn
 	state.api_context = api_context or state.api_context
+	state.on_switch_branch = on_switch_branch or state.on_switch_branch
 	state.view = "pipeline"
 
 	local stages = pipeline.stages and pipeline.stages.nodes or {}

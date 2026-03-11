@@ -6,6 +6,7 @@ local config = require("gitlab-ide.config")
 local git = require("gitlab-ide.git")
 local api = require("gitlab-ide.api")
 local ui = require("gitlab-ide.ui")
+local picker = require("gitlab-ide.picker")
 
 --- Setup the plugin with user configuration
 ---@param opts table|nil User configuration options
@@ -60,9 +61,67 @@ local function build_api_context(callback)
 	})
 end
 
+-- Forward declarations for mutual references
+local open_pipeline_for_branch
+local make_switch_branch_cb
+
+--- Build an on_switch_branch callback for a given API context
+---@param api_context table API context { gitlab_url, token, project_path }
+---@return function on_switch_branch Callback that shows branch picker and reloads pipeline
+make_switch_branch_cb = function(api_context)
+	return function()
+		api.fetch_branches(api_context.gitlab_url, api_context.token, api_context.project_path, function(err, branches)
+			if err then
+				show_error(err)
+				return
+			end
+			if not branches or #branches == 0 then
+				vim.notify("gitlab-ide: No branches found", vim.log.levels.WARN)
+				return
+			end
+			local current_branch = git.get_current_branch()
+			picker.open({
+				items = branches,
+				prompt = "Branch",
+				current_item = current_branch,
+				on_select = function(chosen)
+					if not chosen then
+						return
+					end
+					open_pipeline_for_branch(api_context, chosen)
+				end,
+			})
+		end)
+	end
+end
+
+--- Open the pipeline view for a given branch and API context
+---@param api_context table API context { gitlab_url, token, project_path }
+---@param branch string The branch name
+open_pipeline_for_branch = function(api_context, branch)
+	vim.notify("Fetching pipeline for " .. api_context.project_path .. " @ " .. branch .. "...", vim.log.levels.INFO)
+
+	local function refresh()
+		api.fetch_pipeline(api_context.gitlab_url, api_context.token, api_context.project_path, branch, function(err, pipeline)
+			if err then
+				show_error(err)
+				return
+			end
+			ui.refresh(pipeline)
+		end)
+	end
+
+	api.fetch_pipeline(api_context.gitlab_url, api_context.token, api_context.project_path, branch, function(err, pipeline)
+		if err then
+			show_error(err)
+			return
+		end
+		ui.open(pipeline, refresh, api_context, make_switch_branch_cb(api_context))
+	end)
+end
+
 --- Open the pipeline view for the current repository and branch
 function M.open()
-	-- Get current branch
 	local branch, branch_err = git.get_current_branch()
 	if not branch then
 		show_error(branch_err or "Could not determine current branch")
@@ -70,45 +129,14 @@ function M.open()
 	end
 
 	build_api_context(function(api_context)
-		-- Show loading message
-		vim.notify(
-			"Fetching pipeline for " .. api_context.project_path .. " @ " .. branch .. "...",
-			vim.log.levels.INFO
-		)
+		open_pipeline_for_branch(api_context, branch)
+	end)
+end
 
-		-- Create refresh function
-		local function refresh()
-			api.fetch_pipeline(
-				api_context.gitlab_url,
-				api_context.token,
-				api_context.project_path,
-				branch,
-				function(err, pipeline)
-					if err then
-						show_error(err)
-						return
-					end
-					ui.refresh(pipeline)
-				end
-			)
-		end
-
-		-- Fetch pipeline data
-		api.fetch_pipeline(
-			api_context.gitlab_url,
-			api_context.token,
-			api_context.project_path,
-			branch,
-			function(err, pipeline)
-				if err then
-					show_error(err)
-					return
-				end
-
-				-- Open UI with pipeline data
-				ui.open(pipeline, refresh, api_context)
-			end
-		)
+--- Open a branch picker, then show the pipeline for the selected branch
+function M.open_branch_select()
+	build_api_context(function(api_context)
+		make_switch_branch_cb(api_context)()
 	end)
 end
 

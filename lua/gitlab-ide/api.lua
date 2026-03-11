@@ -313,6 +313,37 @@ function M.fetch_job_log(gitlab_url, token, project_path, job_gid, callback)
 	M.rest_request(gitlab_url, token, "GET", endpoint, callback, { raw = true })
 end
 
+-- GraphQL query for fetching branch names
+local BRANCHES_QUERY = [[
+query($fullPath: ID!, $searchPattern: String!) {
+  project(fullPath: $fullPath) {
+    repository {
+      branchNames(searchPattern: $searchPattern, offset: 0, limit: 50)
+    }
+  }
+}
+]]
+
+--- Fetch branch names for a project
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param callback function Callback function(err, branches)
+function M.fetch_branches(gitlab_url, token, project_path, callback)
+	M.request(gitlab_url, token, BRANCHES_QUERY, { fullPath = project_path, searchPattern = "*" }, function(err, data)
+		if err then
+			callback(err, nil)
+			return
+		end
+		if not data or not data.project or not data.project.repository then
+			callback("Could not fetch branches for: " .. project_path, nil)
+			return
+		end
+		local branches = data.project.repository.branchNames or {}
+		callback(nil, branches)
+	end)
+end
+
 -- GraphQL query for fetching open merge requests
 local MR_LIST_QUERY = [[
 query($fullPath: ID!) {
