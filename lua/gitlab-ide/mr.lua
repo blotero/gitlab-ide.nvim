@@ -2,6 +2,7 @@
 local M = {}
 local api = require("gitlab-ide.api")
 local git = require("gitlab-ide.git")
+local pipeline_icons = require("gitlab-ide.ui.icons")
 
 -- MR state icons
 local mr_icons = {
@@ -17,15 +18,6 @@ local mr_highlights = {
 	merged = "DiagnosticOk",
 	closed = "DiagnosticError",
 	draft = "DiagnosticWarn",
-}
-
--- Pipeline status icons (reuse naming from ui.lua)
-local pipeline_icons = {
-	SUCCESS = "✓",
-	FAILED = "✗",
-	RUNNING = "●",
-	PENDING = "○",
-	CANCELED = "⊘",
 }
 
 -- MR UI state (separate from pipeline UI state)
@@ -361,7 +353,7 @@ local function render_detail(buf, mr)
 	-- Pipeline status
 	local pipeline_status = "none"
 	if mr.headPipeline and mr.headPipeline.status then
-		local pip_icon = pipeline_icons[mr.headPipeline.status] or "?"
+		local pip_icon = pipeline_icons.get_icon(mr.headPipeline.status)
 		pipeline_status = pip_icon .. " " .. mr.headPipeline.status
 	end
 	table.insert(lines, "  Pipeline:   " .. pipeline_status)
