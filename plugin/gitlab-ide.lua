@@ -33,3 +33,10 @@ vim.api.nvim_create_user_command("GitlabIdeMergeRequests", function()
 end, {
 	desc = "Open GitLab IDE merge requests list",
 })
+
+-- Register the :GitlabIdeIssues command
+vim.api.nvim_create_user_command("GitlabIdeIssues", function()
+	require("gitlab-ide").open_issues()
+end, {
+	desc = "Open GitLab IDE issues assigned to current user",
+})

@@ -568,4 +568,30 @@ function M.fetch_mr_notes(gitlab_url, token, project_path, iid, callback)
 	M.rest_request(gitlab_url, token, "GET", endpoint, callback)
 end
 
+--- Fetch issues assigned to the current user in a project
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param callback function Callback function(err, issues)
+function M.fetch_issues(gitlab_url, token, project_path, callback)
+	local encoded_path = M.url_encode_path(project_path)
+	local endpoint = string.format(
+		"/api/v4/projects/%s/issues?scope=assigned_to_me&state=opened&per_page=50",
+		encoded_path
+	)
+	M.rest_request(gitlab_url, token, "GET", endpoint, callback)
+end
+
+--- Fetch a single issue with full detail
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param iid string|number The issue IID
+---@param callback function Callback function(err, issue)
+function M.fetch_issue_detail(gitlab_url, token, project_path, iid, callback)
+	local encoded_path = M.url_encode_path(project_path)
+	local endpoint = string.format("/api/v4/projects/%s/issues/%s", encoded_path, tostring(iid))
+	M.rest_request(gitlab_url, token, "GET", endpoint, callback)
+end
+
 return M

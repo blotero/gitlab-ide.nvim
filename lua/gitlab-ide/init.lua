@@ -182,4 +182,41 @@ function M.open_merge_requests()
 	end)
 end
 
+--- Open the issues list view (assigned to current user, current project)
+function M.open_issues()
+	build_api_context(function(api_context)
+		vim.notify("Fetching issues for " .. api_context.project_path .. "...", vim.log.levels.INFO)
+
+		local issues = require("gitlab-ide.issues")
+
+		local function refresh()
+			api.fetch_issues(
+				api_context.gitlab_url,
+				api_context.token,
+				api_context.project_path,
+				function(err, result)
+					if err then
+						show_error(err)
+						return
+					end
+					issues.open_list(result, refresh, api_context)
+				end
+			)
+		end
+
+		api.fetch_issues(
+			api_context.gitlab_url,
+			api_context.token,
+			api_context.project_path,
+			function(err, result)
+				if err then
+					show_error(err)
+					return
+				end
+				issues.open_list(result, refresh, api_context)
+			end
+		)
+	end)
+end
+
 return M
