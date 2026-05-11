@@ -117,6 +117,20 @@ function M.detect_gitlab_host(url)
 	return nil, "Could not detect GitLab host from URL: " .. url
 end
 
+--- Get the repository root directory
+---@return string|nil root The absolute path to the repo root or nil on error
+---@return string|nil error Error message if failed
+function M.get_repo_root()
+	local result = vim.fn.systemlist({ "git", "rev-parse", "--show-toplevel" })
+	if vim.v.shell_error ~= 0 then
+		return nil, "Not a git repository"
+	end
+	if result[1] then
+		return result[1], nil
+	end
+	return nil, "Could not determine repository root"
+end
+
 --- Get the full GitLab API base URL from a remote URL
 ---@param url string The remote URL
 ---@param override string|nil Optional override for the GitLab URL

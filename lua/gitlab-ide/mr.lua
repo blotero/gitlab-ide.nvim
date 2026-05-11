@@ -175,7 +175,7 @@ local function render_list(buf)
 
 	-- Footer hint
 	table.insert(lines, "")
-	local hint = " ⏎:detail a:approve o:browser r:refresh q/Esc:close"
+	local hint = " ⏎:detail a:approve o:browser c:copy r:refresh q/Esc:close"
 	table.insert(lines, hint)
 	table.insert(highlights_to_apply, {
 		line = #lines - 1,
@@ -258,6 +258,17 @@ local function setup_list_keymaps(buf)
 			return
 		end
 		vim.ui.open(mr.webUrl)
+	end, opts)
+
+	-- Copy URL to clipboard
+	vim.keymap.set("n", "c", function()
+		local mr = get_mr_under_cursor()
+		if not mr or not mr.webUrl then
+			vim.notify("No MR under cursor", vim.log.levels.WARN)
+			return
+		end
+		vim.fn.setreg("+", mr.webUrl)
+		vim.notify("Copied: " .. mr.webUrl)
 	end, opts)
 end
 
@@ -524,6 +535,15 @@ local function setup_detail_keymaps(buf)
 		end
 	end, opts)
 
+	-- Copy URL to clipboard
+	vim.keymap.set("n", "c", function()
+		local mr = state.current_mr
+		if mr and mr.webUrl then
+			vim.fn.setreg("+", mr.webUrl)
+			vim.notify("Copied: " .. mr.webUrl)
+		end
+	end, opts)
+
 	-- Refresh detail
 	vim.keymap.set("n", "r", function()
 		local mr = state.current_mr
@@ -582,7 +602,7 @@ open_detail_view = function(mr)
 		if #title > width - 4 then
 			title = title:sub(1, width - 7) .. "... "
 		end
-		local footer = " q/⌫:back a:approve o:browser r:refresh Esc:close "
+		local footer = " q/⌫:back a:approve o:browser c:copy r:refresh Esc:close "
 		local win = vim.api.nvim_open_win(buf, true, {
 			relative = "editor",
 			width = width,

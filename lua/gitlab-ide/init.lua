@@ -219,4 +219,69 @@ function M.open_issues()
 	end)
 end
 
+--- Open the current file at the cursor position in the GitLab web UI
+---@param range_start number|nil Start line (for visual selection)
+---@param range_end number|nil End line (for visual selection)
+function M.open_in_browser(range_start, range_end)
+	-- Get current file
+	local file = vim.fn.expand("%:p")
+	if file == "" then
+		show_error("No file open")
+		return
+	end
+
+	-- Get repo root to compute relative path
+	local root, root_err = git.get_repo_root()
+	if not root then
+		show_error(root_err or "Could not determine repository root")
+		return
+	end
+
+	-- Compute relative path
+	local rel_path = file:sub(#root + 2) -- +2 to skip the trailing slash
+	if rel_path == "" then
+		show_error("Could not determine relative file path")
+		return
+	end
+
+	-- Get current branch
+	local branch, branch_err = git.get_current_branch()
+	if not branch then
+		show_error(branch_err or "Could not determine current branch")
+		return
+	end
+
+	-- Get remote URL and parse GitLab info
+	local remote = config.get_remote()
+	local remote_url, remote_err = git.get_remote_url(remote)
+	if not remote_url then
+		show_error(remote_err or "Could not get remote URL")
+		return
+	end
+
+	local project_path, path_err = git.get_project_path(remote_url)
+	if not project_path then
+		show_error(path_err or "Could not parse project path")
+		return
+	end
+
+	local gitlab_url, url_err = git.get_gitlab_url(remote_url, config.get_gitlab_url())
+	if not gitlab_url then
+		show_error(url_err or "Could not determine GitLab URL")
+		return
+	end
+
+	-- Build the URL
+	local line_anchor
+	if range_start and range_end and range_start ~= range_end then
+		line_anchor = "#L" .. range_start .. "-" .. range_end
+	else
+		line_anchor = "#L" .. (range_start or vim.fn.line("."))
+	end
+
+	local url = string.format("%s/%s/-/blob/%s/%s%s", gitlab_url, project_path, branch, rel_path, line_anchor)
+
+	vim.ui.open(url)
+end
+
 return M

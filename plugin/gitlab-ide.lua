@@ -34,6 +34,18 @@ end, {
 	desc = "Open GitLab IDE merge requests list",
 })
 
+-- Register the :GitlabIdeBrowse command
+vim.api.nvim_create_user_command("GitlabIdeBrowse", function(opts)
+	if opts.range == 2 then
+		require("gitlab-ide").open_in_browser(opts.line1, opts.line2)
+	else
+		require("gitlab-ide").open_in_browser()
+	end
+end, {
+	desc = "Open current file at cursor position in GitLab web UI",
+	range = true,
+})
+
 -- Register the :GitlabIdeIssues command
 vim.api.nvim_create_user_command("GitlabIdeIssues", function()
 	require("gitlab-ide").open_issues()
