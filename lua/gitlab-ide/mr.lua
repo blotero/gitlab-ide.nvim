@@ -425,18 +425,20 @@ local function render_detail(buf, mr)
 		table.insert(lines, "  " .. line)
 	end
 
-	-- Diff stats
+	-- Diff stats (loaded on demand with `d`)
 	local diff_stats = mr.diffStats or {}
+	table.insert(lines, "")
+	table.insert(lines, string.rep("─", 80))
 	if #diff_stats > 0 then
-		table.insert(lines, "")
-		table.insert(lines, string.rep("─", 80))
-
 		local total_add, total_del = 0, 0
 		for _, stat in ipairs(diff_stats) do
 			total_add = total_add + (stat.additions or 0)
 			total_del = total_del + (stat.deletions or 0)
 		end
-		table.insert(lines, string.format("  Diff Stats: %d files changed, +%d -%d", #diff_stats, total_add, total_del))
+		table.insert(
+			lines,
+			string.format("  Diff Stats: %d files changed, +%d -%d", #diff_stats, total_add, total_del)
+		)
 		table.insert(lines, string.rep("─", 80))
 		table.insert(lines, "")
 
@@ -445,7 +447,6 @@ local function render_detail(buf, mr)
 			table.insert(lines, diff_line)
 
 			local line_idx = #lines - 1
-			-- Highlight additions in green
 			local add_start = #diff_line - #string.format("%-5d -%d", stat.additions or 0, stat.deletions or 0) - 1
 			table.insert(highlights_to_apply, {
 				line = line_idx,
@@ -453,7 +454,6 @@ local function render_detail(buf, mr)
 				col_end = add_start + #string.format("+%d", stat.additions or 0),
 				hl_group = "DiagnosticOk",
 			})
-			-- Highlight deletions in red
 			local del_str = string.format("-%d", stat.deletions or 0)
 			local del_start = #diff_line - #del_str
 			table.insert(highlights_to_apply, {
@@ -463,6 +463,15 @@ local function render_detail(buf, mr)
 				hl_group = "DiagnosticError",
 			})
 		end
+	else
+		local placeholder = "  Diff Stats: press d to load"
+		table.insert(lines, placeholder)
+		table.insert(highlights_to_apply, {
+			line = #lines - 1,
+			col_start = 0,
+			col_end = #placeholder,
+			hl_group = "Comment",
+		})
 	end
 
 	-- Set buffer content
@@ -562,6 +571,39 @@ local function setup_detail_keymaps(buf)
 			end
 		end)
 	end, opts)
+
+	-- Load diff stats on demand
+	vim.keymap.set("n", "d", function()
+		local mr = state.current_mr
+		if not mr or not state.api_context then
+			return
+		end
+		if mr.diffStats and #mr.diffStats > 0 then
+			vim.notify("Diff stats already loaded", vim.log.levels.INFO)
+			return
+		end
+		vim.notify("Loading diff stats...", vim.log.levels.INFO)
+		local ctx = state.api_context
+		api.fetch_mr_diff_stats(ctx.gitlab_url, ctx.token, ctx.project_path, mr.iid, function(err, stats)
+			if err then
+				vim.notify("Failed to load diff stats: " .. err, vim.log.levels.ERROR)
+				return
+			end
+			mr.diffStats = stats
+			state.current_mr = mr
+			if state.detail_buffer and vim.api.nvim_buf_is_valid(state.detail_buffer) then
+				render_detail(state.detail_buffer, mr)
+			end
+		end)
+	end, opts)
+
+	-- Open discussion threads
+	vim.keymap.set("n", "t", function()
+		if not state.current_mr or not state.api_context then
+			return
+		end
+		require("gitlab-ide.mr_threads").open(state.current_mr, state.api_context, state.detail_window)
+	end, opts)
 end
 
 --- Open the detail view for a merge request
@@ -602,7 +644,7 @@ open_detail_view = function(mr)
 		if #title > width - 4 then
 			title = title:sub(1, width - 7) .. "... "
 		end
-		local footer = " q/⌫:back a:approve o:browser c:copy r:refresh Esc:close "
+		local footer = " q/⌫:back a:approve o:browser c:copy d:diff r:refresh t:threads Esc:close "
 		local win = vim.api.nvim_open_win(buf, true, {
 			relative = "editor",
 			width = width,

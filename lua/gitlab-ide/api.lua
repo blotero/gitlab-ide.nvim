@@ -409,11 +409,6 @@ query($fullPath: ID!, $iid: String!) {
       approved
       approvalsRequired
       approvalsLeft
-      diffStats {
-        path
-        additions
-        deletions
-      }
       headPipeline {
         status
       }
@@ -566,6 +561,121 @@ function M.fetch_mr_notes(gitlab_url, token, project_path, iid, callback)
 	local encoded_path = M.url_encode_path(project_path)
 	local endpoint = string.format("/api/v4/projects/%s/merge_requests/%s/notes?sort=asc", encoded_path, tostring(iid))
 	M.rest_request(gitlab_url, token, "GET", endpoint, callback)
+end
+
+-- GraphQL query for fetching diff stats only (used as a separate lazy call)
+local MR_DIFF_STATS_QUERY = [[
+query($fullPath: ID!, $iid: String!) {
+  project(fullPath: $fullPath) {
+    mergeRequest(iid: $iid) {
+      diffStats {
+        path
+        additions
+        deletions
+      }
+    }
+  }
+}
+]]
+
+--- Fetch diff stats for a merge request (separate query to avoid complexity timeout on detail load)
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param iid string|number The merge request IID
+---@param callback function Callback function(err, diff_stats)
+function M.fetch_mr_diff_stats(gitlab_url, token, project_path, iid, callback)
+	M.request(gitlab_url, token, MR_DIFF_STATS_QUERY, { fullPath = project_path, iid = tostring(iid) }, function(err, data)
+		if err then
+			callback(err, nil)
+			return
+		end
+		if not data or not data.project or not data.project.mergeRequest then
+			callback("Merge request not found: !" .. tostring(iid), nil)
+			return
+		end
+		callback(nil, data.project.mergeRequest.diffStats or {})
+	end)
+end
+
+--- Fetch discussion threads for a merge request
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param iid string|number The merge request IID
+---@param callback function Callback function(err, discussions)
+function M.fetch_mr_discussions(gitlab_url, token, project_path, iid, callback)
+	local encoded_path = M.url_encode_path(project_path)
+	local endpoint = string.format(
+		"/api/v4/projects/%s/merge_requests/%s/discussions?per_page=100",
+		encoded_path,
+		tostring(iid)
+	)
+	M.rest_request(gitlab_url, token, "GET", endpoint, function(err, data)
+		if err then
+			callback(err, nil)
+			return
+		end
+		if type(data) == "table" and #data == 100 then
+			vim.notify(
+				"gitlab-ide: discussion list hit 100-item cap; older threads may be truncated",
+				vim.log.levels.WARN
+			)
+		end
+		callback(nil, data or {})
+	end)
+end
+
+--- Create a new top-level note on a merge request
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param iid string|number The merge request IID
+---@param body string The note body
+---@param callback function Callback function(err, note)
+function M.create_mr_note(gitlab_url, token, project_path, iid, body, callback)
+	local encoded_path = M.url_encode_path(project_path)
+	local endpoint = string.format("/api/v4/projects/%s/merge_requests/%s/notes", encoded_path, tostring(iid))
+	M.rest_request(gitlab_url, token, "POST", endpoint, callback, { body = { body = body } })
+end
+
+--- Reply to an existing discussion on a merge request
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param iid string|number The merge request IID
+---@param discussion_id string The discussion ID
+---@param body string The reply body
+---@param callback function Callback function(err, note)
+function M.reply_to_discussion(gitlab_url, token, project_path, iid, discussion_id, body, callback)
+	local encoded_path = M.url_encode_path(project_path)
+	local endpoint = string.format(
+		"/api/v4/projects/%s/merge_requests/%s/discussions/%s/notes",
+		encoded_path,
+		tostring(iid),
+		discussion_id
+	)
+	M.rest_request(gitlab_url, token, "POST", endpoint, callback, { body = { body = body } })
+end
+
+--- Resolve or unresolve a discussion on a merge request
+---@param gitlab_url string The GitLab base URL
+---@param token string The GitLab API token
+---@param project_path string The project path
+---@param iid string|number The merge request IID
+---@param discussion_id string The discussion ID
+---@param resolved boolean True to resolve, false to unresolve
+---@param callback function Callback function(err, discussion)
+function M.resolve_discussion(gitlab_url, token, project_path, iid, discussion_id, resolved, callback)
+	local encoded_path = M.url_encode_path(project_path)
+	local endpoint = string.format(
+		"/api/v4/projects/%s/merge_requests/%s/discussions/%s?resolved=%s",
+		encoded_path,
+		tostring(iid),
+		discussion_id,
+		tostring(resolved and true or false)
+	)
+	M.rest_request(gitlab_url, token, "PUT", endpoint, callback)
 end
 
 --- Fetch issues assigned to the current user in a project

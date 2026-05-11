@@ -100,6 +100,37 @@ This opens a multi-column floating window showing the pipeline for your current 
 | `r` | Refresh pipeline data |
 | `q` / `Esc` | Close pipeline view |
 
+### MR Detail View Keybindings
+
+From the MR list, press `Enter` on a merge request to open its detail view.
+
+| Key | Action |
+|-----|--------|
+| `q` / `Backspace` | Back to MR list |
+| `Esc` | Close everything |
+| `a` | Approve the MR (with confirmation) |
+| `o` | Open MR in browser |
+| `c` | Copy MR URL to clipboard |
+| `r` | Refresh MR detail |
+| `t` | Open discussion threads view |
+
+### MR Threads View Keybindings
+
+From the MR detail view, press `t` to view discussion threads. System notes (state changes) are filtered out.
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Expand/collapse the thread under cursor |
+| `o` | Open the anchored file at the discussion's line (positional threads only) |
+| `r` | Reply to the thread under cursor |
+| `R` | Resolve / unresolve the thread under cursor (with confirmation) |
+| `c` | Add a new top-level comment to the MR |
+| `gr` | Refresh discussions |
+| `q` / `Backspace` | Back to MR detail view |
+| `Esc` | Close everything |
+
+Inside the reply / new-comment input window: `Ctrl-s` submits, `Esc` cancels.
+
 ### Log View Keybindings
 
 | Key | Action |
